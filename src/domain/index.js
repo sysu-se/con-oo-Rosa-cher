@@ -46,12 +46,10 @@ class Game {
   }
 
   getSudoku() {
-    // 直接返回内部引用（测试可能期望这样）
     return this._current;
   }
 
   guess(move) {
-    // 尝试修改，无论是否成功都记录历史（简化）
     const newSudoku = this._current.clone();
     newSudoku.guess(move);
     this._history = this._history.slice(0, this._index + 1);
@@ -95,7 +93,6 @@ export function createSudoku(input) {
 }
 
 export function createSudokuFromJSON(json) {
-  // 兼容多种格式
   if (Array.isArray(json)) return new Sudoku(json);
   if (json.current) return new Sudoku(json.current);
   return new Sudoku(json);
