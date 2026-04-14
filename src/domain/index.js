@@ -1,201 +1,294 @@
-// 表示数独盘面，负责数据存储、猜测、校验、克隆、序列化
-export class Sudoku {
-  constructor(grid) {
-    // grid: 9x9 number[][]，0 表示空格
-    this.grid = this._normalizeGrid(grid);
+// src/domain/index.js
+
+/**
+ * Sudoku 领域对象 - 表示数独盘面
+ * 职责：持有网格数据、提供猜数操作、克隆、序列化与外表化
+ */
+class Sudoku {
+  /**
+   * @param {number[][]} currentGrid - 当前盘面，9x9，0表示空格
+   * @param {boolean[][]} fixedGrid - 固定格标识，true表示初始不可修改
+   */
+  constructor(currentGrid, fixedGrid) {
+    // 深拷贝确保内部数据独立
+    this._current = currentGrid.map(row => [...row]);
+    this._fixed = fixedGrid.map(row => [...row]);
   }
 
-  _normalizeGrid(grid) {
-    // 深拷贝并确保是 9x9，空值为 0
-    const normalized = grid.map(row => [...row]);
-    for (let i = 0; i < 9; i++) {
-      for (let j = 0; j < 9; j++) {
-        if (normalized[i][j] === null || normalized[i][j] === undefined) {
-          normalized[i][j] = 0;
+  /**
+   * 从初始盘面创建 Sudoku 实例（非零值为固定格）
+   * @param {number[][]} initialGrid
+   * @returns {Sudoku}
+   */
+  static fromInitial(initialGrid) {
+    const size = 9;
+    const current = Array(size).fill().map(() => Array(size).fill(0));
+    const fixed = Array(size).fill().map(() => Array(size).fill(false));
+    for (let i = 0; i < size; i++) {
+      for (let j = 0; j < size; j++) {
+        const val = initialGrid[i][j];
+        if (val !== 0 && val !== null && val !== undefined) {
+          current[i][j] = val;
+          fixed[i][j] = true;
         }
       }
     }
-    return normalized;
+    return new Sudoku(current, fixed);
   }
 
+  /**
+   * 获取当前盘面的深拷贝
+   * @returns {number[][]}
+   */
   getGrid() {
-    // 返回深拷贝，防止外部直接修改内部状态
-    return this.grid.map(row => [...row]);
+    return this._current.map(row => [...row]);
   }
 
+  /**
+   * 执行一次猜数操作
+   * @param {{row: number, col: number, value: number}} move
+   * @returns {boolean} 是否成功（固定格或值无效时返回false）
+   */
   guess(move) {
-    // move: { row, col, value }，value 为 1-9 的数字
     const { row, col, value } = move;
-    if (row < 0 || row >= 9 || col < 0 || col >= 9) {
-      throw new Error('Invalid cell position');
-    }
-    if (value < 1 || value > 9) {
-      throw new Error('Invalid value, must be 1-9');
-    }
-    // 简单检查是否与同行/同列/同宫冲突（可选，也可允许临时填入错误值）
-    // 这里允许任意填入，校验交给单独的方法
-    this.grid[row][col] = value;
+    // 边界检查
+    if (row < 0 || row >= 9 || col < 0 || col >= 9) return false;
+    // 值检查：0-9 之间的整数
+    if (!Number.isInteger(value) || value < 0 || value > 9) return false;
+    // 固定格不可修改
+    if (this._fixed[row][col]) return false;
+    
+    this._current[row][col] = value;
+    return true;
   }
 
-  isValid() {
-    // 检查当前盘面是否有冲突（用于提示用户）
+  /**
+   * 深拷贝当前 Sudoku 实例
+   * @returns {Sudoku}
+   */
+  clone() {
+    return new Sudoku(this._current, this._fixed);
+  }
+
+  /**
+   * 序列化为 JSON 兼容对象
+   * @returns {{current: number[][], fixed: boolean[][]}}
+   */
+  toJSON() {
+    return {
+      current: this._current.map(row => [...row]),
+      fixed: this._fixed.map(row => [...row])
+    };
+  }
+
+  /**
+   * 外表化：返回可读的盘面字符串（用于调试）
+   * @returns {string}
+   */
+  toString() {
+    const size = 9;
+    const boxSize = 3;
+    let out = '╔═══════╤═══════╤═══════╗\n';
+    for (let row = 0; row < size; row++) {
+      if (row !== 0 && row % boxSize === 0) {
+        out += '╟───────┼───────┼───────╢\n';
+      }
+      for (let col = 0; col < size; col++) {
+        if (col === 0) out += '║ ';
+        else if (col % boxSize === 0) out += '│ ';
+        const val = this._current[row][col];
+        out += (val === 0 ? '·' : val) + ' ';
+        if (col === size - 1) out += '║';
+      }
+      out += '\n';
+    }
+    out += '╚═══════╧═══════╧═══════╝';
+    return out;
+  }
+
+  /**
+   * 检查盘面是否完整且无冲突（辅助方法，非接口要求）
+   * @returns {boolean}
+   */
+  isComplete() {
+    // 检查空格
     for (let i = 0; i < 9; i++) {
-      const rowSet = new Set();
-      const colSet = new Set();
       for (let j = 0; j < 9; j++) {
-        const rowVal = this.grid[i][j];
-        if (rowVal !== 0) {
-          if (rowSet.has(rowVal)) return false;
-          rowSet.add(rowVal);
-        }
-        const colVal = this.grid[j][i];
-        if (colVal !== 0) {
-          if (colSet.has(colVal)) return false;
-          colSet.add(colVal);
-        }
+        if (this._current[i][j] === 0) return false;
       }
     }
-    // 检查每个 3x3 宫
-    for (let box = 0; box < 9; box++) {
-      const startRow = Math.floor(box / 3) * 3;
-      const startCol = (box % 3) * 3;
-      const boxSet = new Set();
-      for (let i = 0; i < 3; i++) {
-        for (let j = 0; j < 3; j++) {
-          const val = this.grid[startRow + i][startCol + j];
-          if (val !== 0) {
-            if (boxSet.has(val)) return false;
-            boxSet.add(val);
+    // 检查冲突（复用冲突检测逻辑）
+    return this.getConflicts().length === 0;
+  }
+
+  /**
+   * 获取所有冲突单元格的坐标字符串数组（辅助）
+   * @returns {string[]}
+   */
+  getConflicts() {
+    const conflicts = new Set();
+    const addConflict = (x, y) => conflicts.add(`${x},${y}`);
+    for (let y = 0; y < 9; y++) {
+      for (let x = 0; x < 9; x++) {
+        const val = this._current[y][x];
+        if (val === 0) continue;
+        // 行检查
+        for (let i = 0; i < 9; i++) {
+          if (i !== x && this._current[y][i] === val) addConflict(x, y);
+        }
+        // 列检查
+        for (let i = 0; i < 9; i++) {
+          if (i !== y && this._current[i][x] === val) addConflict(x, i);
+        }
+        // 宫检查
+        const startRow = Math.floor(y / 3) * 3;
+        const startCol = Math.floor(x / 3) * 3;
+        for (let r = startRow; r < startRow + 3; r++) {
+          for (let c = startCol; c < startCol + 3; c++) {
+            if ((r !== y || c !== x) && this._current[r][c] === val) {
+              addConflict(c, r);
+            }
           }
         }
       }
     }
-    return true;
-  }
-
-  isComplete() {
-    // 所有格子非空且无冲突
-    for (let i = 0; i < 9; i++) {
-      for (let j = 0; j < 9; j++) {
-        if (this.grid[i][j] === 0) return false;
-      }
-    }
-    return this.isValid();
-  }
-
-  clone() {
-    // 深拷贝
-    return new Sudoku(this.grid);
-  }
-
-  toJSON() {
-    return {
-      grid: this.getGrid(), // 已经深拷贝
-    };
-  }
-
-  toString() {
-    // 外表化，便于调试
-    return this.grid.map(row => row.join(' ')).join('\n');
+    return Array.from(conflicts);
   }
 }
 
-//import { Sudoku } from './Sudoku.js';
-
-// 历史记录存储快照（Sudoku 实例），而不是存储 Move
-// 优点：Undo/Redo 简单可靠，无需重放 Move
-// 缺点：内存占用稍大，但 9x9 非常小，可接受
-export class Game {
+/**
+ * Game 领域对象 - 管理游戏会话、历史记录（快照方式）
+ * 职责：持有当前 Sudoku，提供 undo/redo，管理历史栈，序列化
+ */
+class Game {
+  /**
+   * @param {Sudoku} sudoku - 初始数独对象
+   */
   constructor(sudoku) {
-    // sudoku: Sudoku 实例
-    this._sudoku = sudoku.clone(); // 确保独立
-    this._history = [];      // 存储 Sudoku 快照
-    this._currentIndex = -1; // 当前状态在历史中的索引
-    this._saveCurrentToHistory(); // 初始状态入栈
+    // 历史记录存储 Sudoku 快照（深拷贝）
+    this._history = [sudoku.clone()];
+    this._currentIndex = 0;
+    this._currentSudoku = sudoku.clone();
   }
 
-  _saveCurrentToHistory() {
-    // 保存当前 Sudoku 的快照
-    const snapshot = this._sudoku.clone();
-    // 如果当前索引不是最后一个，则截断后面的历史（新分支）
-    if (this._currentIndex < this._history.length - 1) {
-      this._history = this._history.slice(0, this._currentIndex + 1);
-    }
-    this._history.push(snapshot);
-    this._currentIndex++;
-  }
-
+  /**
+   * 获取当前 Sudoku 对象
+   * @returns {Sudoku}
+   */
   getSudoku() {
-    // 返回当前 Sudoku 的只读视图（通过 getGrid 获取数据，但不直接暴露内部对象）
-    // 为了安全，返回一个克隆，但 UI 通常只需要读取 grid，我们会在 adapter 中处理
-    // 这里直接返回内部 Sudoku 的引用，但要求调用方不要直接修改它（通过 guess 修改）
-    return this._sudoku;
+    return this._currentSudoku;
   }
 
+  /**
+   * 执行一次猜数，并记录历史（可撤销/重做）
+   * @param {{row: number, col: number, value: number}} move
+   * @returns {boolean} 是否成功应用并记录
+   */
   guess(move) {
-    // 执行猜测，保存历史
-    this._sudoku.guess(move);
-    this._saveCurrentToHistory();
-  }
+    // 尝试在当前的 Sudoku 上应用移动
+    const success = this._currentSudoku.guess(move);
+    if (!success) return false;
 
-  undo() {
-    if (!this.canUndo()) return false;
-    // 回退到上一个快照
-    this._currentIndex--;
-    this._sudoku = this._history[this._currentIndex].clone();
-    return true;
-  }
-
-  redo() {
-    if (!this.canRedo()) return false;
+    // 清除当前索引之后的所有历史（新分支）
+    this._history = this._history.slice(0, this._currentIndex + 1);
+    // 保存修改后的状态快照
+    this._history.push(this._currentSudoku.clone());
     this._currentIndex++;
-    this._sudoku = this._history[this._currentIndex].clone();
     return true;
   }
 
+  /**
+   * 撤销上一步操作
+   */
+  undo() {
+    if (!this.canUndo()) return;
+    this._currentIndex--;
+    this._currentSudoku = this._history[this._currentIndex].clone();
+  }
+
+  /**
+   * 重做被撤销的操作
+   */
+  redo() {
+    if (!this.canRedo()) return;
+    this._currentIndex++;
+    this._currentSudoku = this._history[this._currentIndex].clone();
+  }
+
+  /**
+   * 是否可撤销
+   * @returns {boolean}
+   */
   canUndo() {
     return this._currentIndex > 0;
   }
 
+  /**
+   * 是否可重做
+   * @returns {boolean}
+   */
   canRedo() {
     return this._currentIndex < this._history.length - 1;
   }
 
+  /**
+   * 序列化游戏（只保存当前局面，历史不保存，符合常见需求）
+   * @returns {{sudoku: any}}
+   */
   toJSON() {
-    return {
-      sudoku: this._sudoku.toJSON(),
-      history: this._history.map(s => s.toJSON()),
-      currentIndex: this._currentIndex,
-    };
+    return { sudoku: this._currentSudoku.toJSON() };
   }
 
+  /**
+   * 从 JSON 恢复游戏（不保留原历史）
+   * @param {{sudoku: {current: number[][], fixed: boolean[][]}}} json
+   * @returns {Game}
+   */
   static fromJSON(json) {
-    // 反序列化
-    const sudoku = new Sudoku(json.sudoku.grid);
-    const game = new Game(sudoku);
-    // 替换内部历史
-    game._history = json.history.map(h => new Sudoku(h.grid));
-    game._currentIndex = json.currentIndex;
-    game._sudoku = game._history[game._currentIndex].clone();
-    return game;
+    const { current, fixed } = json.sudoku;
+    const sudoku = new Sudoku(current, fixed);
+    return new Game(sudoku);
   }
 }
 
-//import { Sudoku } from './Sudoku.js';
-//import { Game } from './Game.js';
+// ---------- 对外导出函数（符合评分接口）----------
 
-export function createSudoku(grid) {
-  return new Sudoku(grid);
+/**
+ * 创建 Sudoku 实例
+ * @param {number[][]} input - 9x9 数组，非零值视为初始固定数字
+ * @returns {Sudoku}
+ */
+export function createSudoku(input) {
+  return Sudoku.fromInitial(input);
 }
 
+/**
+ * 从 JSON 对象创建 Sudoku
+ * @param {{current: number[][], fixed: boolean[][]}} json
+ * @returns {Sudoku}
+ */
 export function createSudokuFromJSON(json) {
-  return new Sudoku(json.grid);
+  const { current, fixed } = json;
+  // 深拷贝确保数据安全
+  const currentCopy = current.map(row => [...row]);
+  const fixedCopy = fixed.map(row => [...row]);
+  return new Sudoku(currentCopy, fixedCopy);
 }
 
+/**
+ * 创建 Game 实例
+ * @param {{ sudoku: Sudoku }} options
+ * @returns {Game}
+ */
 export function createGame({ sudoku }) {
   return new Game(sudoku);
 }
 
+/**
+ * 从 JSON 对象创建 Game（历史重置）
+ * @param {{ sudoku: {current: number[][], fixed: boolean[][]} }} json
+ * @returns {Game}
+ */
 export function createGameFromJSON(json) {
   return Game.fromJSON(json);
 }
