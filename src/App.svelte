@@ -1,54 +1,55 @@
+<!-- src/App.svelte -->
 <script>
-	import { onMount } from 'svelte';
-	import { validateSencode } from '@sudoku/sencode';
-	import game from '@sudoku/game';
-	import { modal } from '@sudoku/stores/modal';
-	import { gameWon } from '@sudoku/stores/game';
-	import Board from './components/Board/index.svelte';
-	import Controls from './components/Controls/index.svelte';
-	import Header from './components/Header/index.svelte';
-	import Modal from './components/Modal/index.svelte';
+  import { onMount } from 'svelte';
+  import { createGameStore } from './stores/gameStore';
+  import Grid from './components/Grid.svelte';
+  import { difficulty } from './stores/difficulty'; // 原有难度 store（可保留或替换）
 
-	gameWon.subscribe(won => {
-		if (won) {
-			game.pause();
-			modal.show('gameover');
-		}
-	});
+  // 创建游戏 store
+  let gameStore;
 
-	onMount(() => {
-		let hash = location.hash;
+  // 初始化：根据当前难度创建
+  $: currentDifficulty = $difficulty; // 假设 difficulty 是 store
+  $: {
+    if (currentDifficulty) {
+      gameStore = createGameStore({ difficulty: currentDifficulty });
+    }
+  }
 
-		if (hash.startsWith('#')) {
-			hash = hash.slice(1);
-		}
+  // 暴露给子组件的状态
+  $: grid = $gameStore?.grid || [];
+  $: invalidCells = $gameStore?.invalidCells || [];
+  $: won = $gameStore?.won || false;
+  $: canUndo = $gameStore?.canUndo || false;
+  $: canRedo = $gameStore?.canRedo || false;
 
-		let sencode;
-		if (validateSencode(hash)) {
-			sencode = hash;
-		}
+  function handleGuess(row, col, value) {
+    gameStore?.guess(row, col, value);
+  }
 
-		modal.show('welcome', { onHide: game.resume, sencode });
-	});
+  function handleUndo() {
+    gameStore?.undo();
+  }
+
+  function handleRedo() {
+    gameStore?.redo();
+  }
+
+  function handleNewGame() {
+    gameStore?.newGame($difficulty);
+  }
 </script>
 
-<!-- Timer, Menu, etc. -->
-<header>
-	<Header />
-</header>
-
-<!-- Sudoku Field -->
-<section>
-	<Board />
-</section>
-
-<!-- Keyboard -->
-<footer>
-	<Controls />
-</footer>
-
-<Modal />
-
-<style global>
-	@import "./styles/global.css";
-</style>
+<main>
+  {#if gameStore}
+    <Grid {grid} {invalidCells} onGuess={handleGuess} />
+    <div class="controls">
+      <button on:click={handleUndo} disabled={!canUndo}>Undo</button>
+      <button on:click={handleRedo} disabled={!canRedo}>Redo</button>
+      <button on:click={handleNewGame}>New Game</button>
+    </div>
+    {#if won}
+      <div class="win-message">You won!</div>
+    {/if}
+  {/if}
+</main>
