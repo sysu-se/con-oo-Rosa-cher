@@ -1,0 +1,24 @@
+## HW 问题收集
+
+### 已解决
+
+1. 提交的代码运行没有通过
+   1. 没有使用合适的package-lock.json
+   2. **解决手段**：调试，询问ai代码的bug
+2. 没有处理好Undo/Redo 的快照流转
+   1. Game.guess() 在新操作前截断 redo 分支，再追加新快照；undo() / redo() 与 canUndo() / canRedo() 配套
+   2. **解决手段**：修改代码，查阅资料
+
+### 未解决
+
+1.真实游戏流程仍绕过 Game/Sudoku 直接走旧逻辑，领域对象没有成为 UI 的核心入口
+   1. **上下文**：src/components/Controls/Keyboard.svelte, src/components/Header/Dropdown.svelte,src/components/Modal/Types/Welcome.svelte
+用户输入、开始新局、加载自定义题目等关键流程仍直接调用 userGrid.set(...)、startNew(...)、startCustom(...) 这一套旧 API，而不是统一经由 Game / Sudoku
+
+   2. **尝试解决手段**：问过ai未果
+
+2. 盲写单元格，没有建模题面
+
+   1. **上下文**：src/domain/index.js
+Sudoku.guess(...)
+   2. **尝试解决手段**：修改代码，但bug很多，ai也调试失败，只能改回原状
